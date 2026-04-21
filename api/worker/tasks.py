@@ -2,7 +2,9 @@ from worker.executor import run_code
 import redis
 import json
 
-redis_client = redis.Redis(host='localhost', port=6379, decode_responses=True)
+import os
+redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+redis_client = redis.from_url(redis_url, decode_responses=True)
 
 def execute_code_task(job_id: str, code: str, language: str, stdin: str = ""):
     """This function runs inside the RQ worker"""
