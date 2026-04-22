@@ -85,3 +85,33 @@ async def get_result(job_id: str, db: Session = Depends(get_db)):
         stdout=submission.stdout,
         stderr=submission.stderr,
     )
+
+    from fastapi import WebSocket, WebSocketDisconnect
+import asyncio
+
+@router.websocket("/ws/{job_id}")
+async def stream_result(websocket: WebSocket, job_id: str):
+    await websocket.accept()
+    
+    try:
+        # Stream status updates until job is complete
+        for _ in range(60):  # max 60 seconds
+            data = redis_client.get(f"job:{job_id}")
+            
+            if not data:
+                await websocket.send_json({"status": "not_found"})
+                break
+            
+            job = json.loads(data)
+            await websocket.send_json(job)
+            
+            # If job is finished, close connection
+            if job["status"] not in ("queued", "running"):
+                break
+                
+            await asyncio.sleep(0.5)
+            
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await websocket.close()

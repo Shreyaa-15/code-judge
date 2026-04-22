@@ -1,8 +1,8 @@
 import { useState } from "react";
 import Editor from "@monaco-editor/react";
-import { api } from "./api";
 import AuthPage from "./AuthPage";
 import Leaderboard from "./Leaderboard";
+import { api, streamResult } from "./api";
 
 const LANGUAGES = ["python", "cpp", "java"];
 
@@ -59,18 +59,36 @@ export default function App() {
     setLoading(false);
   };
 
-  const handleSubmit = async () => {
-    setLoading(true);
-    setResult(null);
-    setError("");
-    try {
-      const res = await api.submit(code, language, stdin, token);
-      await pollResult(res.job_id);
-    } catch (e: any) {
-      setError(e.message);
-      setLoading(false);
-    }
-  };
+const handleSubmit = async () => {
+  setLoading(true);
+  setResult(null);
+  setError("");
+
+  // Show live status while running
+  setResult({ status: "running", stdout: "", stderr: "" });
+
+  try {
+    const res = await api.submit(code, language, stdin, token);
+    const jobId = res.job_id;
+
+    // Open WebSocket connection for real-time updates
+    streamResult(
+      jobId,
+      (data) => {
+        // Called every 500ms with current status
+        setResult(data);
+      },
+      (data) => {
+        // Called when job is complete
+        setResult(data);
+        setLoading(false);
+      }
+    );
+  } catch (e: any) {
+    setError(e.message);
+    setLoading(false);
+  }
+};
 
   if (!token) return <AuthPage onAuth={handleAuth} />;
 
@@ -153,7 +171,17 @@ export default function App() {
             {!result && !loading && !error && (
               <div style={s.placeholder}>Run your code to see output here</div>
             )}
-            {loading && <div style={s.placeholder}>⏳ Executing in sandbox...</div>}
+            {loading && result?.status === "running" && (
+  <div style={s.placeholder}>
+    <div style={{ marginBottom: "8px" }}>⚡ Executing in sandbox...</div>
+    <div style={{ fontSize: "12px", color: "#58a6ff" }}>
+      ● Live via WebSocket
+    </div>
+  </div>
+)}
+{loading && result?.status === "queued" && (
+  <div style={s.placeholder}>⏳ Waiting in queue...</div>
+)}
             {error && <div style={s.errorText}>{error}</div>}
             {result && (
               <>

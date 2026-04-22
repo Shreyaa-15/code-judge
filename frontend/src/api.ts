@@ -60,3 +60,26 @@ export const api = {
     return res.json();
   },
 };
+
+export function streamResult(
+  jobId: string,
+  onUpdate: (data: any) => void,
+  onDone: (data: any) => void
+): WebSocket {
+  const ws = new WebSocket(`ws://localhost:8000/api/ws/${jobId}`);
+
+  ws.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    onUpdate(data);
+    if (data.status !== "queued" && data.status !== "running") {
+      onDone(data);
+      ws.close();
+    }
+  };
+
+  ws.onerror = () => {
+    onDone({ status: "error", stdout: "", stderr: "WebSocket connection failed" });
+  };
+
+  return ws;
+}
