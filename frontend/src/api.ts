@@ -1,4 +1,4 @@
-const BASE = "http://localhost:8000/api";
+const BASE = process.env.REACT_APP_API_URL || "http://localhost:8000/api";
 
 export const api = {
   async register(username: string, email: string, password: string) {
