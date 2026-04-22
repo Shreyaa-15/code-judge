@@ -2,7 +2,6 @@ version: '3.9'
 
 services:
 
-  # Redis - job queue
   redis:
     image: redis:7-alpine
     ports:
@@ -13,7 +12,22 @@ services:
       timeout: 3s
       retries: 5
 
-  # FastAPI backend
+  db:
+    image: postgres:15-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: codejudge
+      POSTGRES_USER: judge
+      POSTGRES_PASSWORD: judgepass
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U judge -d codejudge"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   api:
     build: ./api
     ports:
@@ -21,29 +35,35 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      db:
+        condition: service_healthy
     environment:
       - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=postgresql://judge:judgepass@db:5432/codejudge
+      - SECRET_KEY=supersecretkey123changeinproduction
       - OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES
     volumes:
       - ./api:/app
       - /var/run/docker.sock:/var/run/docker.sock
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
-  # RQ Worker
   worker:
     build: ./api
     depends_on:
       redis:
         condition: service_healthy
+      db:
+        condition: service_healthy
     environment:
       - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=postgresql://judge:judgepass@db:5432/codejudge
+      - SECRET_KEY=supersecretkey123changeinproduction
       - OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES
     volumes:
       - ./api:/app
       - /var/run/docker.sock:/var/run/docker.sock
     command: rq worker --url redis://redis:6379
 
-  # React frontend
   frontend:
     build: ./frontend
     ports:
@@ -54,3 +74,6 @@ services:
       - ./frontend/src:/app/src
     environment:
       - REACT_APP_API_URL=http://localhost:8000
+
+volumes:
+  postgres_data:

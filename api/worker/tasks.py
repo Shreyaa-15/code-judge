@@ -1,31 +1,34 @@
 from worker.executor import run_code
-import redis
-import json
+from database import SessionLocal, Submission
+import redis, json, os, time
 
-import os
 redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
 redis_client = redis.from_url(redis_url, decode_responses=True)
 
 def execute_code_task(job_id: str, code: str, language: str, stdin: str = ""):
-    """This function runs inside the RQ worker"""
+    redis_client.setex(f"job:{job_id}", 300,
+        json.dumps({"status": "running", "stdout": "", "stderr": ""}))
 
-    # Mark job as running
-    redis_client.setex(
-        f"job:{job_id}",
-        300,  # expire after 5 minutes
-        json.dumps({"status": "running", "stdout": "", "stderr": ""})
-    )
-
-    # Run the code in Docker sandbox
+    start = time.time()
     result = run_code(code, language, stdin)
+    execution_time = round(time.time() - start, 3)
 
-    # Store the result in Redis
-    redis_client.setex(
-        f"job:{job_id}",
-        300,
-        json.dumps({
-            "status": result["status"],
-            "stdout": result["stdout"],
-            "stderr": result["stderr"],
-        })
-    )
+    # Update Redis
+    redis_client.setex(f"job:{job_id}", 300, json.dumps({
+        "status": result["status"],
+        "stdout": result["stdout"],
+        "stderr": result["stderr"],
+    }))
+
+    # Update PostgreSQL permanently
+    db = SessionLocal()
+    try:
+        submission = db.query(Submission).filter(Submission.job_id == job_id).first()
+        if submission:
+            submission.status = result["status"]
+            submission.stdout = result["stdout"]
+            submission.stderr = result["stderr"]
+            submission.execution_time = execution_time
+            db.commit()
+    finally:
+        db.close()
