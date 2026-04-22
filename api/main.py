@@ -3,8 +3,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from routes.submit import router as submit_router
 from routes.auth import router as auth_router
 from routes.leaderboard import router as leaderboard_router
-from database import init_db
 from routes.plagiarism import router as plagiarism_router
+from routes.contest import router as contest_router
+from database import init_db
 
 app = FastAPI(
     title="Code Judge API",
@@ -28,6 +29,7 @@ app.include_router(auth_router, prefix="/api/auth")
 app.include_router(submit_router, prefix="/api")
 app.include_router(leaderboard_router, prefix="/api")
 app.include_router(plagiarism_router, prefix="/api")
+app.include_router(contest_router, prefix="/api")
 
 @app.get("/")
 async def root():

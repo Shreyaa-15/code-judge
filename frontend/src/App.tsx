@@ -2,6 +2,7 @@ import { useState } from "react";
 import Editor from "@monaco-editor/react";
 import AuthPage from "./AuthPage";
 import Leaderboard from "./Leaderboard";
+import ContestPage from "./ContestPage";
 import { api, streamResult } from "./api";
 
 const LANGUAGES = ["python", "cpp", "java"];
@@ -17,7 +18,7 @@ type Result = { status: string; stdout: string; stderr: string };
 export default function App() {
   const [token, setToken] = useState(() => localStorage.getItem("token") || "");
   const [username, setUsername] = useState(() => localStorage.getItem("username") || "");
-  const [page, setPage] = useState<"editor" | "leaderboard">("editor");
+  const [page, setPage] = useState<"editor" | "leaderboard" | "contests">("editor");
   const [language, setLanguage] = useState("python");
   const [code, setCode] = useState(STARTER_CODE["python"]);
   const [stdin, setStdin] = useState("");
@@ -45,50 +46,29 @@ export default function App() {
     setResult(null);
   };
 
-  const pollResult = async (jobId: string) => {
-    for (let i = 0; i < 20; i++) {
-      await new Promise((r) => setTimeout(r, 1000));
-      const res = await api.getResult(jobId);
-      if (res.status !== "queued" && res.status !== "running") {
-        setResult(res);
-        setLoading(false);
-        return;
-      }
+  const handleSubmit = async () => {
+    setLoading(true);
+    setResult(null);
+    setError("");
+    setResult({ status: "running", stdout: "", stderr: "" });
+
+    try {
+      const res = await api.submit(code, language, stdin, token);
+      const jobId = res.job_id;
+
+      streamResult(
+        jobId,
+        (data) => setResult(data),
+        (data) => {
+          setResult(data);
+          setLoading(false);
+        }
+      );
+    } catch (e: any) {
+      setError(e.message);
+      setLoading(false);
     }
-    setError("Timed out waiting for result");
-    setLoading(false);
   };
-
-const handleSubmit = async () => {
-  setLoading(true);
-  setResult(null);
-  setError("");
-
-  // Show live status while running
-  setResult({ status: "running", stdout: "", stderr: "" });
-
-  try {
-    const res = await api.submit(code, language, stdin, token);
-    const jobId = res.job_id;
-
-    // Open WebSocket connection for real-time updates
-    streamResult(
-      jobId,
-      (data) => {
-        // Called every 500ms with current status
-        setResult(data);
-      },
-      (data) => {
-        // Called when job is complete
-        setResult(data);
-        setLoading(false);
-      }
-    );
-  } catch (e: any) {
-    setError(e.message);
-    setLoading(false);
-  }
-};
 
   if (!token) return <AuthPage onAuth={handleAuth} />;
 
@@ -106,6 +86,10 @@ const handleSubmit = async () => {
             style={{ ...s.navBtn, ...(page === "leaderboard" ? s.navBtnActive : {}) }}
             onClick={() => setPage("leaderboard")}
           >🏆 Leaderboard</button>
+          <button
+            style={{ ...s.navBtn, ...(page === "contests" ? s.navBtnActive : {}) }}
+            onClick={() => setPage("contests")}
+          >🏁 Contests</button>
         </div>
         <div style={s.userArea}>
           <span style={s.userBadge}>👤 {username}</span>
@@ -117,9 +101,12 @@ const handleSubmit = async () => {
         <Leaderboard token={token} currentUser={username} />
       )}
 
+      {page === "contests" && (
+        <ContestPage token={token} username={username} />
+      )}
+
       {page === "editor" && (
         <div style={s.main}>
-          {/* Editor panel */}
           <div style={s.editorPanel}>
             <div style={s.toolbar}>
               {LANGUAGES.map((lang) => (
@@ -165,25 +152,22 @@ const handleSubmit = async () => {
             </div>
           </div>
 
-          {/* Results panel */}
           <div style={s.resultPanel}>
             <div style={s.resultHeader}>Output</div>
             {!result && !loading && !error && (
               <div style={s.placeholder}>Run your code to see output here</div>
             )}
             {loading && result?.status === "running" && (
-  <div style={s.placeholder}>
-    <div style={{ marginBottom: "8px" }}>⚡ Executing in sandbox...</div>
-    <div style={{ fontSize: "12px", color: "#58a6ff" }}>
-      ● Live via WebSocket
-    </div>
-  </div>
-)}
-{loading && result?.status === "queued" && (
-  <div style={s.placeholder}>⏳ Waiting in queue...</div>
-)}
+              <div style={s.placeholder}>
+                <div style={{ marginBottom: "8px" }}>⚡ Executing in sandbox...</div>
+                <div style={{ fontSize: "12px", color: "#58a6ff" }}>● Live via WebSocket</div>
+              </div>
+            )}
+            {loading && result?.status === "queued" && (
+              <div style={s.placeholder}>⏳ Waiting in queue...</div>
+            )}
             {error && <div style={s.errorText}>{error}</div>}
-            {result && (
+            {result && !loading && (
               <>
                 <div style={{
                   ...s.statusBadge,
