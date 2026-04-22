@@ -1,46 +1,132 @@
-# Getting Started with Create React App
+# Code Judge — Distributed Code Execution Engine
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+A production-grade, LeetCode-style code execution engine built from scratch.
+Supports Python, C++, and Java with secure Docker sandboxing, async job queuing,
+real-time WebSocket streaming, JWT authentication, plagiarism detection, and contest mode.
 
-## Available Scripts
+## Live Demo
 
-In the project directory, you can run:
+> Register → Write code → Hit Run → See results stream live via WebSocket
 
-### `npm start`
+## Features
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+- Multi-language support — Python 3.12, C++, Java 21
+- Secure sandboxing — Docker containers with no network access, 128MB RAM cap, CPU limits, non-root user
+- Async job queue — Redis + RQ worker pool, horizontally scalable
+- Real-time streaming — WebSocket pushes execution status live to the browser
+- JWT authentication — Register, login, protected endpoints
+- Rate limiting — 10 submissions per minute per user
+- Persistent storage — All submissions stored in PostgreSQL
+- Leaderboard — Ranked by successful submissions and success rate
+- Submission history — Full history per user
+- Plagiarism detection — Winnowing algorithm (same technique as Stanford MOSS)
+- Contest mode — Timed contests with per-problem leaderboard ranked by solve count and time
+- One-command setup — `docker compose up --build`
 
-The page will reload if you make edits.\
-You will also see any lint errors in the console.
+## Architecture
+Browser (React + Monaco Editor)
+|
+| HTTP + WebSocket
+v
+FastAPI (Python) --- JWT Auth --- Rate Limiting
+|
+v
+Redis Queue (RQ)
+|
+v
+Worker Pool -----> Docker Sandbox (no network, memory/CPU limits)
+|                  |__ judge-python
+|                  |__ judge-cpp
+|                  |__ judge-java
+v
+PostgreSQL (users, submissions, contests)
+|
+v
+WebSocket push back to browser
 
-### `npm test`
+## Tech Stack
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+| Layer      | Technology                  |
+|------------|-----------------------------|
+| Frontend   | React, TypeScript, Monaco Editor |
+| API        | FastAPI (Python 3.12)       |
+| Queue      | Redis + RQ                  |
+| Sandbox    | Docker                      |
+| Database   | PostgreSQL 15               |
+| Auth       | JWT (python-jose + bcrypt)  |
+| Infra      | Docker Compose              |
 
-### `npm run build`
+## Running Locally
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+Prerequisites: Docker Desktop, Git
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+```bash
+# Clone
+git clone https://github.com/Shreyaa-15/code-judge.git
+cd code-judge
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+# Build sandbox images
+docker build -t judge-python ./sandboxes/python
+docker build -t judge-cpp ./sandboxes/cpp
+docker build -t judge-java ./sandboxes/java
 
-### `npm run eject`
+# Start everything
+docker compose up --build
+```
 
-**Note: this is a one-way operation. Once you `eject`, you can’t go back!**
+Open http://localhost:3000
 
-If you aren’t satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+## Security Model
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you’re on your own.
+Each submission runs in a fresh Docker container with the following restrictions:
 
-You don’t have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn’t feel obligated to use this feature. However we understand that this tool wouldn’t be useful if you couldn’t customize it when you are ready for it.
+| Restriction        | Value                    |
+|--------------------|--------------------------|
+| Network            | Disabled                 |
+| Memory             | 128MB max                |
+| CPU                | 50% of one core          |
+| Execution timeout  | 30 seconds               |
+| User               | Non-root (uid 1000)      |
+| Filesystem         | Read-only mount          |
 
-## Learn More
+## Plagiarism Detection
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+Uses the Winnowing algorithm — the same approach as Stanford MOSS:
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+1. Tokenize code and normalize all variable names to a placeholder
+2. Generate k-grams (sequences of k tokens)
+3. Hash each k-gram with MD5
+4. Select fingerprints using a sliding window minimum
+5. Compare fingerprint sets using Jaccard similarity
+
+Similarity above 80% is flagged as high risk. Above 50% is flagged as suspicious.
+
+## Scaling Workers
+
+```bash
+# Run 5 parallel workers
+docker compose up --scale worker=5
+```
+
+## Project Structure
+code-judge/
+├── api/
+│   ├── main.py              # FastAPI app entry point
+│   ├── auth.py              # JWT utilities
+│   ├── database.py          # SQLAlchemy models
+│   ├── routes/
+│   │   ├── submit.py        # Submit endpoint + WebSocket stream
+│   │   ├── auth.py          # Register and login
+│   │   ├── leaderboard.py   # Leaderboard and history
+│   │   ├── plagiarism.py    # Plagiarism detection
+│   │   └── contest.py       # Contest mode
+│   └── worker/
+│       ├── executor.py      # Docker sandbox runner
+│       ├── tasks.py         # RQ task definitions
+│       └── plagiarism.py    # Winnowing algorithm
+├── sandboxes/
+│   ├── python/Dockerfile
+│   ├── cpp/Dockerfile
+│   └── java/Dockerfile
+├── frontend/                # React + TypeScript
+└── docker-compose.yml       # One-command setup
