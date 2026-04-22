@@ -1,0 +1,10 @@
+{
+  "files": {
+    "main.js": "/code-judge/static/js/main.d8b49b94.js",
+    "index.html": "/code-judge/index.html",
+    "main.d8b49b94.js.map": "/code-judge/static/js/main.d8b49b94.js.map"
+  },
+  "entrypoints": [
+    "static/js/main.d8b49b94.js"
+  ]
+}
